@@ -4,42 +4,60 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const { exec } = require('child_process');
 
 const app = express();
-// Render 云端会通过环境变量指定端口，本地默认 3000
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
-const ADMIN_PASSWORD = 'admin123';
 
-// 中间件
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(__dirname));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_REPO_URL = GITHUB_TOKEN
+    ? `https://${GITHUB_TOKEN}@github.com/duke369-lab/hazard-report-system.git`
+    : '';
 
-// 确保数据文件和目录存在
-function ensureReady() {
-    if (!fs.existsSync(DATA_FILE)) {
-        fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), 'utf8');
-    }
-    const uploadsDir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+// ========== Git 同步函数 ==========
+
+// 从 GitHub 拉取最新 data.json
+function gitPull(cb) {
+    if (!GITHUB_TOKEN) return cb && cb(null);
+    exec('git pull origin main', { cwd: __dirname }, (err, stdout) => {
+        if (err) console.log('[Git] pull 失败（可忽略首次）:', err.message);
+        else console.log('[Git] pull 完成');
+        if (cb) cb(err);
+    });
 }
-ensureReady();
 
-// ========== 根路径显式返回 index.html（修复 Cannot GET /）==========
-app.get('/', (req, res) => {
-    const indexPath = path.join(__dirname, 'index.html');
-    if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-    } else {
-        res.status(404).send('页面文件未找到，请确认 index.html 存在');
-    }
-});
+// 将 data.json 推送到 GitHub
+function gitPush(cb) {
+    if (!GITHUB_TOKEN) return cb && cb(null);
+    const cmds = [
+        'git add data.json',
+        'git diff --quiet --cached || git commit -m "数据更新 ' + new Date().toLocaleString('zh-CN') + '"',
+        'git push origin main'
+    ].join(' && ');
+    exec(cmds, { cwd: __dirname }, (err) => {
+        if (err) console.log('[Git] push 失败:', err.message);
+        else console.log('[Git] push 完成 ✅');
+        if (cb) cb(err);
+    });
+}
 
-// 读取数据
+// 启动时初始化 git remote（如果还没配置）
+function initGitRemote() {
+    if (!GITHUB_TOKEN) return;
+    exec('git remote -v', { cwd: __dirname }, (err, stdout) => {
+        if (!stdout || !stdout.includes('github.com')) {
+            console.log('[Git] 配置 remote...');
+            exec(`git remote add origin ${GITHUB_REPO_URL}`, { cwd: __dirname });
+        }
+        // 首次 pull
+        gitPull();
+    });
+}
+
+// ========== 数据读写 ==========
+
 function loadData() {
     try {
         const raw = fs.readFileSync(DATA_FILE, 'utf8');
@@ -49,12 +67,38 @@ function loadData() {
     }
 }
 
-// 保存数据
-function saveData(data) {
+function saveData(data, cb) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    // 异步推送到 GitHub（不阻塞响应）
+    if (GITHUB_TOKEN) {
+        gitPush();
+    }
+    if (cb) cb();
 }
 
-// 配置图片上传
+// ========== 初始化 ==========
+function ensureReady() {
+    if (!fs.existsSync(DATA_FILE)) {
+        fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), 'utf8');
+    }
+    const uploadsDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+}
+
+ensureReady();
+initGitRemote();
+
+// 每 60 秒自动从 GitHub 拉取最新数据（多实例协同）
+if (GITHUB_TOKEN) {
+    setInterval(() => {
+        gitPull();
+    }, 60000);
+}
+
+// ========== Multer 配置（处理图片上传）==========
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, path.join(__dirname, 'uploads'));
@@ -66,7 +110,23 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ===================== API 接口 =====================
+// ========== 中间件 ==========
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(__dirname));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ========== 根路径 ==========
+app.get('/', (req, res) => {
+    const indexPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('index.html 未找到');
+    }
+});
+
+// ===================== API =====================
 
 // 获取所有隐患
 app.get('/api/reports', (req, res) => {
@@ -113,7 +173,7 @@ app.post('/api/reports', upload.array('photos', 5), (req, res) => {
     res.json({ success: true, report: newReport });
 });
 
-// 更新隐患状态（管理员）
+// 更新隐患（管理员）
 app.put('/api/reports/:id', upload.array('finishPhotos', 5), (req, res) => {
     const { password, status, handler, reviewComment } = req.body;
     if (password !== ADMIN_PASSWORD) {
@@ -162,14 +222,13 @@ app.delete('/api/reports/:id', (req, res) => {
     if (idx === -1) return res.status(404).json({ error: '未找到' });
 
     const record = data[idx];
-    // 删除关联图片
     record.photos.forEach(p => {
         const fp = path.join(__dirname, p);
-        if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch(e) {}
+        if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch (e) { }
     });
     record.finishPhotos.forEach(p => {
         const fp = path.join(__dirname, p);
-        if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch(e) {}
+        if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch (e) { }
     });
 
     data.splice(idx, 1);
@@ -177,7 +236,7 @@ app.delete('/api/reports/:id', (req, res) => {
     res.json({ success: true });
 });
 
-// 管理员验证
+// 管理员登录
 app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
     if (password === ADMIN_PASSWORD) {
@@ -201,26 +260,34 @@ app.get('/api/stats/points', (req, res) => {
     res.json(ranking);
 });
 
-// 健康检查（Render 需要）
+// 健康检查
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
+    res.json({ status: 'ok', github: !!GITHUB_TOKEN });
 });
 
-// 启动服务器
+// 手动同步 GitHub（管理员）
+app.post('/api/sync', (req, res) => {
+    const { password } = req.body;
+    if (password !== ADMIN_PASSWORD) {
+        return res.status(403).json({ error: '管理员密码错误' });
+    }
+    gitPull((err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// ========== 启动 ==========
 app.listen(PORT, '0.0.0.0', () => {
     const isCloud = !!process.env.PORT;
-
     if (isCloud) {
-        // 云端模式
         console.log('========================================');
-        console.log('  隐患随手拍系统 · 已启动（云端版）');
+        console.log('  隐患随手拍系统 · 云端版');
         console.log('========================================');
-        console.log('');
-        console.log('【访问地址】   https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'));
-        console.log('【管理员密码】 admin123');
+        console.log('  GitHub 同步:', GITHUB_TOKEN ? '已启用 ✅' : '未配置 ❌');
+        console.log('  访问地址:    https://' + (process.env.RENDER_EXTERNAL_HOSTNAME || 'your-app.onrender.com'));
         console.log('========================================');
     } else {
-        // 本地模式
         const { networkInterfaces } = require('os');
         const nets = networkInterfaces();
         let localIP = 'localhost';
@@ -231,16 +298,12 @@ app.listen(PORT, '0.0.0.0', () => {
                 }
             }
         }
-
         console.log('========================================');
-        console.log('  隐患随手拍系统 · 已启动（本地版）');
+        console.log('  隐患随手拍系统 · 本地版');
         console.log('========================================');
-        console.log('');
-        console.log('【电脑访问】   http://localhost:' + PORT);
-        console.log('【手机访问】   http://' + localIP + ':' + PORT);
-        console.log('  （手机需连同一WiFi）');
-        console.log('');
-        console.log('【管理员密码】 admin123');
+        console.log('  电脑访问:    http://localhost:' + PORT);
+        console.log('  手机访问:    http://' + localIP + ':' + PORT);
+        console.log('  GitHub 同步:', GITHUB_TOKEN ? '已启用 ✅' : '未配置');
         console.log('========================================');
     }
 });
