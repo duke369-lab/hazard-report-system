@@ -9,4 +9,6 @@ services:
       - key: NODE_VERSION
         value: 18
       - key: ADMIN_PASSWORD
-        generateValue: false
+        value: admin123
+      - key: GITHUB_TOKEN
+        sync: false
