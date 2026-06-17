@@ -9,4 +9,4 @@ services:
       - key: NODE_VERSION
         value: 18
       - key: ADMIN_PASSWORD
-        sync: false
+        generateValue: false
