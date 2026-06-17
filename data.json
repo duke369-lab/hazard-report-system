@@ -1,0 +1,19 @@
+[
+  {
+    "id": "abaa8eb4-36f1-44c8-a45e-97201e58680e",
+    "type": "一般隐患",
+    "location": "6车间",
+    "description": "1",
+    "reporter": "6",
+    "photos": [
+      "/uploads/img_1781656770420_a582e5.jpg"
+    ],
+    "status": "待审核",
+    "handler": "待派单",
+    "points": 10,
+    "createTime": "2026/6/17 08:39:30",
+    "finishPhotos": [],
+    "reviewComment": "",
+    "history": []
+  }
+]

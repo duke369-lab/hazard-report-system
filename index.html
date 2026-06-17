@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <title>安全哨兵 · 全员隐患提报系统</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5;
+            padding-bottom: 70px;
+            color: #1f2937;
+        }
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: white; display: flex; justify-content: space-around;
+            padding: 8px 0 12px; box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            border-top: 1px solid #e5e7eb; z-index: 100;
+        }
+        .nav-item {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 4px; font-size: 12px; color: #6b7280;
+            background: none; border: none; padding: 4px 12px; border-radius: 30px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .nav-item.active { color: #dc2626; font-weight: 500; background: #fef2f2; }
+        .page { display: none; padding: 16px; max-width: 600px; margin: 0 auto; }
+        .page.active { display: block; }
+        .card {
+            background: white; border-radius: 20px; padding: 16px;
+            margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid #eef2f6;
+        }
+        .form-group { margin-bottom: 16px; }
+        label { font-weight: 500; font-size: 14px; display: block; margin-bottom: 6px; color: #374151; }
+        input, textarea, select {
+            width: 100%; padding: 12px; border: 1px solid #d1d5db;
+            border-radius: 14px; font-size: 15px; background: #fff; transition: 0.2s;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none; border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.1);
+        }
+        .photo-area {
+            border: 1px dashed #cbd5e1; border-radius: 16px; padding: 16px;
+            text-align: center; background: #fafcff; cursor: pointer;
+        }
+        .photo-preview { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+        .preview-img { width: 80px; height: 80px; object-fit: cover; border-radius: 12px; border: 1px solid #e2e8f0; }
+        .btn {
+            background: #dc2626; color: white; border: none; padding: 12px;
+            border-radius: 40px; font-weight: 600; font-size: 16px;
+            width: 100%; cursor: pointer; transition: 0.2s;
+        }
+        .btn:hover { background: #b91c1c; }
+        .btn-secondary { background: #f3f4f6; color: #1f2937; border: 1px solid #e5e7eb; }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .badge {
+            display: inline-block; padding: 4px 12px; border-radius: 30px;
+            font-size: 12px; font-weight: 500;
+        }
+        .status-pending { background: #fef9c3; color: #854d0e; }
+        .status-fixing { background: #fed7aa; color: #7b341e; }
+        .status-check { background: #bfdbfe; color: #1e40af; }
+        .status-done { background: #bbf7d0; color: #166534; }
+        .report-item { border-bottom: 1px solid #f0f0f0; padding: 12px 0; }
+        .reward-points { font-size: 18px; font-weight: bold; color: #dc2626; }
+        .empty-tip { text-align: center; padding: 40px 20px; color: #94a3b8; }
+        .inline-flex { display: inline-flex; align-items: center; gap: 8px; }
+        .text-sm { font-size: 13px; }
+        .text-gray { color: #6c757d; }
+        .mt-2 { margin-top: 8px; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .admin-photo { width: 100%; max-width: 200px; height: auto; border-radius: 12px; margin-top: 8px; border: 1px solid #e2e8f0; }
+        .reward-info { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 12px; padding: 12px; margin-top: 12px; }
+        .reward-info h4 { color: #92400e; margin-bottom: 8px; }
+        .reward-info ul { margin-left: 20px; color: #78350f; }
+        .reward-info li { margin-bottom: 4px; }
+        .refresh-bar {
+            background: #e6f7ff; border-radius: 12px; padding: 8px 12px;
+            margin-bottom: 12px; font-size: 13px; color: #1e40af;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 999; justify-content: center; align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-overlay img { max-width: 95%; max-height: 90vh; border-radius: 12px; }
+    </style>
+</head>
+<body>
+
+<!-- 图片全屏预览弹窗 -->
+<div class="modal-overlay" id="imgModal" onclick="this.classList.remove('active')">
+    <img id="imgModalSrc" src="" alt="预览">
+</div>
+
+<!-- 页面：上报隐患 -->
+<div id="page-report" class="page active">
+    <div class="card">
+        <h3 style="margin-bottom:8px;">📸 隐患随手拍</h3>
+        <p class="text-sm text-gray">人人都是安全哨兵 · 上报即得积分</p>
+    </div>
+    <div class="card">
+        <div class="form-group">
+            <label>📷 现场照片（最多5张）</label>
+            <div class="photo-area" id="photoArea">
+                📸 点击拍摄或上传照片
+                <input type="file" id="imageInput" accept="image/*" capture="environment" style="display:none" multiple>
+            </div>
+            <div class="photo-preview" id="photoPreview"></div>
+        </div>
+        <div class="form-group">
+            <label>⚠️ 隐患类型</label>
+            <select id="hiddenType">
+                <option value="一般隐患">一般隐患（物品乱放）</option>
+                <option value="较大隐患">较大隐患（防护缺失、线路破损）</option>
+                <option value="重大隐患">重大隐患 ⚡（特种设备/消防等严重问题）</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>📍 位置区域</label>
+            <input type="text" id="location" placeholder="例：六车间西侧A01充电区">
+        </div>
+        <div class="form-group">
+            <label>📝 隐患描述</label>
+            <textarea rows="3" id="description" placeholder="请清楚描述隐患情况……"></textarea>
+        </div>
+        <div class="form-group">
+            <label>👤 您的姓名</label>
+            <input type="text" id="reporterName" placeholder="真实姓名（用于奖励）">
+        </div>
+        <button class="btn" id="submitBtn">✅ 提交隐患（可获积分）</button>
+    </div>
+</div>
+
+<!-- 页面：全部隐患列表 -->
+<div id="page-list" class="page">
+    <div class="flex-between" style="margin-bottom:12px;">
+        <h3>📋 全部隐患上报</h3>
+        <span class="badge" style="background:#e6f7ff;">共 <span id="totalCount">0</span> 条</span>
+    </div>
+    <div id="refreshBar" class="refresh-bar">
+        <span>🔄 每10秒自动刷新</span>
+        <span id="lastRefresh" style="font-size:12px;">--:--</span>
+    </div>
+    <div id="reportsList"></div>
+</div>
+
+<!-- 页面：积分排行 -->
+<div id="page-rank" class="page">
+    <div class="card">
+        <div class="flex-between">
+            <span><strong>🏆 积分排行榜</strong></span>
+            <button class="btn btn-secondary" onclick="loadRanking()" style="width:auto;padding:6px 12px;font-size:13px;">刷新</button>
+        </div>
+    </div>
+    <div id="rankingList" class="card">
+        <div class="empty-tip">加载中…</div>
+    </div>
+    <div class="card">
+        <h3 style="margin-bottom:12px;">🎁 积分规则</h3>
+        <div class="reward-info">
+            <h4>💰 上报奖励</h4>
+            <ul>
+                <li><strong>一般隐患</strong>：+<strong>10积分</strong></li>
+                <li><strong>较大隐患</strong>：+<strong>30积分</strong></li>
+                <li><strong>重大隐患</strong>：+<strong>50积分</strong></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- 管理后台 -->
+<div id="page-admin" class="page">
+    <div class="card">
+        <div class="flex-between">
+            <h3>🔧 隐患处理台</h3>
+            <span id="adminBadge" style="font-size:12px;background:#fee2e2;padding:4px 10px;border-radius:20px;display:none;">管理员模式</span>
+        </div>
+        <p class="text-sm text-gray">审核 / 派单 / 验收</p>
+    </div>
+    <div class="card" id="adminLoginCard">
+        <div class="form-group">
+            <label>🔐 管理员密码</label>
+            <input type="password" id="adminPassword" placeholder="请输入管理员密码">
+            <button class="btn btn-secondary mt-2" onclick="loginAdmin()" style="width:auto;padding:8px 16px;">登录</button>
+        </div>
+        <div id="adminLoginTip" class="text-sm text-gray">登录后可处理隐患</div>
+    </div>
+    <div id="adminContent" style="display:none;"></div>
+</div>
+
+<!-- 底部导航 -->
+<div class="bottom-nav">
+    <button class="nav-item active" data-page="report">📸 上报</button>
+    <button class="nav-item" data-page="list">📋 全部</button>
+    <button class="nav-item" data-page="rank">🏅 排行</button>
+    <button class="nav-item" data-page="admin">⚙️ 管理</button>
+</div>
+
+<script>
+// ==================== 配置 ====================
+const API_BASE = location.origin;
+const ADMIN_PASSWORD = 'admin123';
+let isAdmin = false;
+let allReports = [];
+let uploadedFiles = [];
+let refreshTimer = null;
+
+// ==================== 工具 ====================
+function api(url, opts) {
+    opts = opts || {};
+    return fetch(API_BASE + url, {
+        ...opts,
+        headers: (opts.body instanceof FormData) ? opts.headers : { 'Content-Type': 'application/json', ...(opts.headers || {}) }
+    }).then(r => r.json());
+}
+
+function timeNow() {
+    var d = new Date();
+    return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+}
+
+// ==================== 数据加载 ====================
+function loadReports() {
+    api('/api/reports').then(function(data) {
+        allReports = data;
+        renderList();
+        renderAdmin();
+        document.getElementById('lastRefresh').textContent = '上次刷新：' + timeNow();
+    }).catch(function() {
+        document.getElementById('lastRefresh').textContent = '网络异常，重试中…';
+    });
+}
+
+function loadRanking() {
+    api('/api/stats/points').then(function(data) {
+        var html = '';
+        if (!data.length) {
+            html = '<div class="empty-tip">暂无数据</div>';
+        } else {
+            data.forEach(function(item, i) {
+                var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '　';
+                html += '<div class="report-item flex-between"><span>' + medal + ' <strong>' + item.name + '</strong></span><span class="reward-points">' + item.points + ' 分</span></div>';
+            });
+        }
+        document.getElementById('rankingList').innerHTML = html;
+    });
+}
+
+// ==================== 渲染列表 ====================
+function renderList() {
+    var container = document.getElementById('reportsList');
+    document.getElementById('totalCount').textContent = allReports.length;
+
+    if (!allReports.length) {
+        container.innerHTML = '<div class="empty-tip">暂无上报记录，快去上报第一个隐患！</div>';
+        return;
+    }
+
+    var html = '';
+    allReports.forEach(function(r) {
+        var statusMap = {
+            '待审核': '<span class="badge status-pending">待审核</span>',
+            '整改中': '<span class="badge status-fixing">整改中</span>',
+            '待验收': '<span class="badge status-check">待验收</span>',
+            '已完成': '<span class="badge status-done">✅ 已完成</span>'
+        };
+        var statusHtml = statusMap[r.status] || r.status;
+
+        // 照片缩略图
+        var photosHtml = '';
+        if (r.photos && r.photos.length > 0) {
+            for (var pi = 0; pi < Math.min(r.photos.length, 3); pi++) {
+                photosHtml += '<img src="' + r.photos[pi] + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px;margin-right:4px;cursor:pointer;" onclick="showFullImage(\'' + r.photos[pi] + '\')">';
+            }
+            if (r.photos.length > 3) photosHtml += '<span class="text-sm text-gray">+' + (r.photos.length - 3) + '张</span>';
+        }
+
+        html += '<div class="card" style="margin-bottom:12px;">'
+            + '<div class="flex-between"><strong>⚠️ ' + r.type + '</strong>' + statusHtml + '</div>'
+            + '<div class="text-sm text-gray" style="margin-top:4px;">📍 ' + r.location + '</div>'
+            + '<div style="margin-top:4px;">' + r.description + '</div>'
+            + (photosHtml ? '<div style="margin-top:8px;">' + photosHtml + '</div>' : '')
+            + '<div class="flex-between mt-2" style="font-size:12px;color:#6c757d;">'
+            + '<span>👤 ' + r.reporter + '</span><span>🏅 ' + r.points + '分</span><span>📅 ' + r.createTime + '</span>'
+            + '</div>'
+            + (r.handler && r.handler !== '待派单' ? '<div class="text-sm mt-2" style="color:#7b341e;">🔧 处理人：' + r.handler + '</div>' : '')
+            + '</div>';
+    });
+    container.innerHTML = html;
+}
+
+// ==================== 图片全屏预览 ====================
+function showFullImage(src) {
+    document.getElementById('imgModalSrc').src = src;
+    document.getElementById('imgModal').classList.add('active');
+}
+
+// ==================== 提交隐患 ====================
+document.getElementById('submitBtn').addEventListener('click', function() {
+    var locationVal = document.getElementById('location').value.trim();
+    var description = document.getElementById('description').value.trim();
+    var reporter = document.getElementById('reporterName').value.trim() || '匿名同事';
+    var type = document.getElementById('hiddenType').value;
+
+    if (!locationVal || !description) {
+        alert('请填写位置和隐患描述');
+        return;
+    }
+
+    localStorage.setItem('safety_user', reporter);
+
+    var formData = new FormData();
+    formData.append('type', type);
+    formData.append('location', locationVal);
+    formData.append('description', description);
+    formData.append('reporter', reporter);
+
+    uploadedFiles.forEach(function(f) { formData.append('photos', f); });
+
+    fetch(API_BASE + '/api/reports', { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (res.success) {
+                alert('✅ 提交成功！获得 ' + res.report.points + ' 积分');
+                document.getElementById('description').value = '';
+                document.getElementById('location').value = '';
+                document.getElementById('photoPreview').innerHTML = '';
+                document.getElementById('imageInput').value = '';
+                uploadedFiles = [];
+                loadReports();
+                switchPage('list');
+            } else {
+                alert('提交失败：' + (res.error || '未知错误'));
+            }
+        })
+        .catch(function() { alert('提交失败，请检查网络连接'); });
+});
+
+// ==================== 图片选择 ====================
+var photoArea = document.getElementById('photoArea');
+var imageInput = document.getElementById('imageInput');
+photoArea.addEventListener('click', function() { imageInput.click(); });
+imageInput.addEventListener('change', function(e) {
+    var files = Array.from(e.target.files).slice(0, 5);
+    uploadedFiles = files;
+    var preview = document.getElementById('photoPreview');
+    preview.innerHTML = '';
+    files.forEach(function(f) {
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var img = document.createElement('img');
+            img.src = ev.target.result;
+            img.className = 'preview-img';
+            preview.appendChild(img);
+        };
+        reader.readAsDataURL(f);
+    });
+});
+
+// ==================== 管理员 ====================
+function loginAdmin() {
+    var pwd = document.getElementById('adminPassword').value;
+    if (pwd === ADMIN_PASSWORD) {
+        isAdmin = true;
+        document.getElementById('adminBadge').style.display = 'inline-block';
+        document.getElementById('adminLoginTip').textContent = '✅ 已登录管理员模式';
+        document.getElementById('adminLoginTip').style.color = '#166534';
+        document.getElementById('adminLoginCard').style.display = 'none';
+        document.getElementById('adminContent').style.display = 'block';
+        renderAdmin();
+    } else {
+        alert('❌ 密码错误');
+    }
+}
+
+function renderAdmin() {
+    if (!isAdmin) return;
+    var container = document.getElementById('adminContent');
+    var html = '<div class="flex-between" style="margin-bottom:12px;"><h3>🔍 所有隐患（处理视图）</h3></div>';
+
+    if (!allReports.length) {
+        container.innerHTML = html + '<div class="card empty-tip">暂无隐患上报</div>';
+        return;
+    }
+
+    allReports.forEach(function(r) {
+        var statusMap = {
+            '待审核': '<span class="badge status-pending">待审核</span>',
+            '整改中': '<span class="badge status-fixing">整改中</span>',
+            '待验收': '<span class="badge status-check">待验收</span>',
+            '已完成': '<span class="badge status-done">✅ 已完成</span>'
+        };
+
+        var photosHtml = '';
+        if (r.photos && r.photos.length > 0) {
+            r.photos.forEach(function(p) {
+                photosHtml += '<img src="' + p + '" class="admin-photo" style="max-width:120px;margin-right:8px;cursor:pointer;" onclick="showFullImage(\'' + p + '\')">';
+            });
+        }
+
+        var finishHtml = '';
+        if (r.finishPhotos && r.finishPhotos.length > 0) {
+            finishHtml = '<div style="margin-top:8px;"><strong>✅ 整改后照片：</strong><br>';
+            r.finishPhotos.forEach(function(p) {
+                finishHtml += '<img src="' + p + '" style="max-width:120px;margin-right:8px;border-radius:8px;cursor:pointer;" onclick="showFullImage(\'' + p + '\')">';
+            });
+            finishHtml += '</div>';
+        }
+
+        html += '<div class="card" style="margin-bottom:12px;">'
+            + '<div><strong>' + r.type + '</strong> ' + (statusMap[r.status] || r.status) + '</div>'
+            + '<div class="text-sm" style="margin-top:4px;">📍 ' + r.location + '</div>'
+            + '<div style="margin-top:4px;">📝 ' + r.description + '</div>'
+            + (photosHtml ? '<div style="margin-top:8px;"><strong>上报照片：</strong><br>' + photosHtml + '</div>' : '')
+            + finishHtml
+            + '<div class="text-sm text-gray" style="margin-top:8px;">'
+            + '上报人：<strong>' + r.reporter + '</strong> · 积分：' + r.points + ' · ' + r.createTime
+            + '</div>'
+            + '<div class="text-sm" style="margin-top:4px;">处理人：<strong>' + r.handler + '</strong></div>';
+
+        // 操作按钮
+        if (r.status === '待审核') {
+            html += '<div class="mt-2 inline-flex" style="gap:8px;width:100%;">'
+                + '<input type="text" id="handler_' + r.id + '" placeholder="派单给责任人" style="flex:1;padding:8px;">'
+                + '<button class="btn-secondary" style="width:auto;padding:8px 16px;" onclick="assignReport(\'' + r.id + '\')">📌 派单</button>'
+                + '</div>';
+        } else if (r.status === '整改中') {
+            html += '<div class="mt-2">'
+                + '<input type="file" id="finishImg_' + r.id + '" accept="image/*" style="margin-bottom:6px;">'
+                + '<button class="btn-secondary" style="padding:8px;" onclick="finishReport(\'' + r.id + '\')">✅ 提交整改完成照片</button>'
+                + '</div>';
+        } else if (r.status === '待验收') {
+            html += '<div class="mt-2 inline-flex" style="gap:8px;">'
+                + '<button style="background:#16a34a;color:white;padding:8px 16px;border:none;border-radius:20px;cursor:pointer;" onclick="approveReport(\'' + r.id + '\')">✔ 验收合格 结案</button>'
+                + '<button class="btn-secondary" style="padding:8px;" onclick="rejectReport(\'' + r.id + '\')">🔄 驳回整改</button>'
+                + '</div>';
+        }
+
+        // 删除按钮
+        html += '<div class="mt-2" style="text-align:right;">'
+            + '<button style="background:#dc2626;color:white;font-size:12px;padding:4px 12px;border:none;border-radius:20px;cursor:pointer;" onclick="deleteReport(\'' + r.id + '\')">🗑️ 删除</button>'
+            + '</div></div>';
+    });
+
+    container.innerHTML = html;
+}
+
+// 管理员操作函数
+function assignReport(id) {
+    var handler = document.getElementById('handler_' + id).value.trim();
+    if (!handler) { alert('请填写责任人'); return; }
+    var fd = new FormData();
+    fd.append('password', ADMIN_PASSWORD);
+    fd.append('status', '整改中');
+    fd.append('handler', handler);
+    fetch(API_BASE + '/api/reports/' + id, { method: 'PUT', body: fd }).then(function() { loadReports(); });
+}
+
+function finishReport(id) {
+    var input = document.getElementById('finishImg_' + id);
+    if (!input || !input.files || !input.files[0]) { alert('请选择整改后照片'); return; }
+    var fd = new FormData();
+    fd.append('password', ADMIN_PASSWORD);
+    fd.append('status', '待验收');
+    fd.append('finishPhotos', input.files[0]);
+    fetch(API_BASE + '/api/reports/' + id, { method: 'PUT', body: fd }).then(function() { loadReports(); });
+}
+
+function approveReport(id) {
+    var fd = new FormData();
+    fd.append('password', ADMIN_PASSWORD);
+    fd.append('status', '已完成');
+    fetch(API_BASE + '/api/reports/' + id, { method: 'PUT', body: fd }).then(function() { loadReports(); });
+}
+
+function rejectReport(id) {
+    var fd = new FormData();
+    fd.append('password', ADMIN_PASSWORD);
+    fd.append('status', '整改中');
+    fd.append('handler', '重新整改');
+    fetch(API_BASE + '/api/reports/' + id, { method: 'PUT', body: fd }).then(function() { loadReports(); });
+}
+
+function deleteReport(id) {
+    if (!confirm('确定删除这条隐患上报？')) return;
+    fetch(API_BASE + '/api/reports/' + id, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: ADMIN_PASSWORD })
+    }).then(function() { loadReports(); });
+}
+
+// ==================== 页面切换 ====================
+function switchPage(pageId) {
+    document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+    document.getElementById('page-' + pageId).classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelector('.nav-item[data-page="' + pageId + '"]').classList.add('active');
+
+    if (pageId === 'list') loadReports();
+    if (pageId === 'rank') loadRanking();
+    if (pageId === 'admin' && isAdmin) renderAdmin();
+}
+
+document.querySelectorAll('.nav-item').forEach(function(btn) {
+    btn.addEventListener('click', function() { switchPage(btn.getAttribute('data-page')); });
+});
+
+// ==================== 自动刷新 ====================
+function startAutoRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(function() {
+        var listPage = document.getElementById('page-list');
+        if (listPage && listPage.classList.contains('active')) {
+            loadReports();
+        }
+    }, 10000); // 每10秒
+}
+
+// ==================== 初始化 ====================
+window.addEventListener('DOMContentLoaded', function() {
+    var savedName = localStorage.getItem('safety_user');
+    if (savedName) document.getElementById('reporterName').value = savedName;
+    loadReports();
+    startAutoRefresh();
+});
+</script>
+</body>
+</html>
